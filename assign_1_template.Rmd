@@ -16,7 +16,7 @@ output:
 #=================================================================================
 
   # Clear the working space
-    rm(list = ls())
+    rm(list = ls()) 
   
   # The following is the path to your desired working directory:
   # Change just this command line (#24) and then skip down to line #73
