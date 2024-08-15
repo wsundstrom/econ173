@@ -1,4 +1,4 @@
 # econ173
-Files for ECON 173 Applied Econometrics
+R scripts for ECON 173 Applied Econometrics
 
-Shared data and R scripts for ECON 173 at Santa Clara University.
+Download to your computer for editing and running.
