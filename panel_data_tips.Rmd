@@ -1,0 +1,160 @@
+---
+title: ''
+output:
+  html_document:
+    fig_height: 6
+    fig_width: 8
+    highlight: textmate
+    theme: cerulean
+---
+
+```{r setup, echo=FALSE, message=F, warning=F  }
+
+#=================================================================================
+#   This setup chunk is used for every assignment: 
+#   Modify line #24, leave the rest alone, and skip down to line #73!
+#=================================================================================
+
+  # Clear the working space
+    rm(list = ls())
+  
+  # The following is the path to your desired working directory:
+  # Change just this command line (#24) and then skip down to line #73
+  
+    MyDir = "/your path/Econ173"
+  
+### Leave the rest of this chunk alone, unless you need to add a package
+  
+  # Sundstrom directory (leave this alone!)
+    SundstromDir <- "/Users/wsundstrom/Library/CloudStorage/GoogleDrive-wsundstrom@scu.edu/My Drive/Econ173"
+  
+  # Choose correct working directory and proceed
+    if (file.exists(SundstromDir)){
+      WorkDir = SundstromDir
+    } else {
+      WorkDir = MyDir
+    }
+    
+  # Set working directory 
+    setwd(WorkDir)
+    
+### Load the packages (all must have been installed)
+    library(knitr)
+    library(AER)
+    library(sandwich)
+    library(tidyverse)  
+    library(plm)
+    library(haven)
+    library(readxl)
+    library(modelsummary)
+    library(lfe)
+    library(ivreg)
+    
+### More settings
+  
+  # Root directory for knitr
+    opts_knit$set(root.dir = WorkDir)
+  
+  # turn off scientific notation except for big numbers
+    options(scipen = 9)
+  # set font size for ggplot (default is 12)
+    theme_set(theme_gray(base_size = 12))
+  
+```
+
+<base target="_top"/>
+  
+ECON 173 Winter 2024   
+
+### Regressions with panel data in R
+
+#### Fixed effects (FE) using the felm( ) command
+
+For fixed effects regressions, we use the command `felm`, which is part of the `lfe` package. The syntax for `felm` is very simple: `felm(y ~ x1 + x2 +... | FE vars | IV | cluster vars, data = data )`. Because we will not generally be using IVs in these models, we will replace IV with the numeral 0 in the command. So for example, if we want to regress y on x1 and x2 using two-way fixed effects for state and year, and cluster the standard errors by state, we would have:
+
+`felm(y ~ x1 + x2 | state + year | 0 | state, data = data )` 
+
+In the regression table below, we also estimate and report the TWFE model using OLS and adding state and year factor variables as controls. This yields the same coefficient as the `felm` command (as it should), but the estimated standard errors are different because of the clustering in the `felm` estimation. 
+
+--- 
+
+#### First differences (FD) using the plm( ) command
+
+For regressions in first differences, we use the command `plm`, which is part of the `plm` package. The syntax for `plm` is a little different, but also very simple. We have to add a line of code to cluster the standard errors for plm. Example of basic syntax for FD:
+
+`plm(y ~ x1 + x2, data = data, index = c("state","year"), model="fd")` 
+
+--- 
+
+#### Examples using the traffic fatalities and minimum legal drinking age data
+
+
+```{r, message=F, warning=F, comment=NA, echo=T }
+
+### read the mortality data 
+
+    deaths <- read_dta("http://masteringmetrics.com/wp-content/uploads/2015/01/deaths.dta") %>% 
+      mutate(statedum = as.factor(state),           # state as factor variable
+             yeardum = as.factor(year),             # year as factor variable
+             time = year-1970) %>%                  # time trend variable
+      filter(year>=1970 & year<=1983 & agegr==2 & dtype==2)    # Note this only keeps ages 18-20 and MV deaths
+  
+  # reg1: OLS with no FEs (pooled) but clustered SEs
+    reg1 <- felm(mrate ~ legal | 0 | 0 | state, data = deaths )
+  
+  # reg2: TWFEs state + year
+    reg2 <- felm(mrate ~ legal | state + year | 0 | state, data = deaths ) 
+    
+  # reg2w: TWFEs state + year with population weights
+    reg2w <- felm(mrate ~ legal | state + year | 0 | state, weights = deaths$pop, data = deaths ) 
+    
+  # reg3: TWFE with state-specific time trends
+    reg3 <- felm(mrate ~ legal + statedum:time | state + year | 0 | state, data = deaths )
+  
+  # reg4: first differences using plm command, with year dummies to account for time FEs
+    reg4 <- plm(mrate ~ legal + yeardum, data = deaths, index = c("state","year"), model="fd")
+    # the following will cluster SEs by group = state
+    reg4$vcov <- vcovHC(reg4, type = "HC1", cluster = "group")
+  
+  # Table of results
+    models1 <- list("OLS"=reg1, "TWFE"=reg2, "TWFE+trend"=reg3, "FD"=reg4)
+    modelsummary(models1,
+             coef_map = c("legal"="Legal drinking variable"), # don't show intercept or state trends
+             stars=T, gof_map = c("nobs", "r.squared"),
+             title = "Panel regressions",
+             output="default")
+  
+    
+``` 
+
+--- 
+
+#### TWFE three ways...
+
+The following regressions show that the TWFE results can be obtained using various methods: OLS with state and year dummies; `felm` indicating state and year FEs; or so-called Mundlak regression, which is OLS that adds two regressors: the state-specific mean of `legal`, and the year-specific mean of `legal`.   
+
+
+```{r, message=F, warning=F, comment=NA, echo=T }
+
+  # The following show some different ways to estimate TWFE: You do not need these for your assignment!
+
+  # reg3f: TWFE with factor variables: This is just to show you that the coefficient is the same as reg3.
+    reg3f <- lm(mrate ~ legal + as.factor(state) + as.factor(year), data = deaths )
+    
+  # reg3m: TWFE using so-called Mundlak regression: This is just to show you that the coefficient is the same as reg3
+    deaths1 <- deaths %>% 
+      group_by(state) %>% mutate(mean_legal_state = mean(legal)) %>% 
+      ungroup() %>% 
+      group_by(year) %>% mutate(mean_legal_year = mean(legal))
+    reg3m <- lm(mrate ~ legal + mean_legal_state + mean_legal_year, data = deaths1 )
+  
+  # Table of results
+    models2 <- list("TWFE"=reg2, "TWFE factors"=reg3f, "TWFE Mundlak"=reg3m)
+    modelsummary(models2,
+             coef_map = c("legal"="Legal drinking variable"), 
+             stars=T, gof_map = c("nobs", "r.squared"),
+             title = "Panel regressions",
+             output="default")
+
+```
+
